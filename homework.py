@@ -16,7 +16,7 @@ load_dotenv()
 
 # LOGGING
 FORMATTER = logging.Formatter(
-    '%(asctime)s - [%(levelname)s] %(name)s - %(message)s'
+    "%(asctime)s - [%(levelname)s] %(name)s - %(message)s"
 )
 # LOG_FILE = "bot_log.log"
 
@@ -28,7 +28,6 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')  # me
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-payload = {'from_date': 0}  #???
 
 
 HOMEWORK_STATUSES = {
@@ -38,17 +37,18 @@ HOMEWORK_STATUSES = {
 }
 
 
-def get_console_handler():
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(FORMATTER)
-    return console_handler
+def get_stream_handler():
+    """Return StreamHandler with set Formatter."""
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(FORMATTER)
+    return stream_handler
 
 
-def get_logger(logger_name):
+def get_logger(logger_name, level=logging.DEBUG):
+    """Return Logger with StreamHandler. Logging level may be customized."""
     logger = logging.getLogger(logger_name)
-    logger.setLevel(logging.INFO)
-    logger.addHandler(get_console_handler())
-    logger.propagate = False  # todo GOOGLE???
+    logger.setLevel(level)
+    logger.addHandler(get_stream_handler())
     return logger
 
 
@@ -57,8 +57,12 @@ def send_message(bot, message):
 
 
 def get_api_answer(current_timestamp):
+    """XXX."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
+    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    pprint(response.text)
+    pprint(response.json())
 
     pass
 
@@ -76,14 +80,21 @@ def parse_status(homework):
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
-def check_tokens():
-    pass
+def check_tokens() -> bool:
+    """Check all required tokens."""
+    return PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID
 
 
 def main():
     """Основная логика работы бота."""
 
-    bot_logger = get_logger(__name__)
+    logger = get_logger(__name__)
+    logger.debug('Logger started...')
+
+    if check_tokens():
+        logger.info('Tokens found!')
+    else:
+        logger.critical('[!] Tokens not found! Please add your tokens in .env file!')
 
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
@@ -91,23 +102,23 @@ def main():
 
     # ...
 
-    while True:
-        try:
-            response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-            pprint(response.text)
-            pprint(response.json())
-            # ...
-
-            current_timestamp = int(time.time())  # ???
-            time.sleep(RETRY_TIME)
-
-        except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            # ...
-            time.sleep(RETRY_TIME)
-        else:
-            pass
-            # ...
+    # while True:
+    #     try:
+    #         response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
+    #         pprint(response.text)
+    #         pprint(response.json())
+    #         # ...
+    #
+    #         current_timestamp = int(time.time())  # ???
+    #         time.sleep(RETRY_TIME)
+    #
+    #     except Exception as error:
+    #         message = f'Сбой в работе программы: {error}'
+    #         # ...
+    #         time.sleep(RETRY_TIME)
+    #     else:
+    #         pass
+    #         # ...
 
 
 if __name__ == '__main__':
