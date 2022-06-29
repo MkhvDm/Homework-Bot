@@ -1,2 +1,2 @@
-class MyException(Exception):
+class ApiResponseNotCorrect(Exception):
     pass
