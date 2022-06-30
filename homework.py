@@ -17,11 +17,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# LOGGING
-FORMATTER = logging.Formatter(
-    "%(asctime)s - [%(levelname)s] %(name)s - %(message)s"
-)
 # Prepare your logger...
+FORMATTER = logging.Formatter("%(asctime)s - [%(levelname)s] %(message)s")
 bot_logger = logging.getLogger(__name__)
 bot_logger.setLevel(logging.DEBUG)
 stream_handler = logging.StreamHandler(sys.stdout)
@@ -29,8 +26,9 @@ stream_handler.setFormatter(FORMATTER)
 bot_logger.addHandler(stream_handler)
 bot_logger.debug('Logger enabled...')
 
+# Get tokens from .env
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')  # bot
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')      # bot
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')  # me
 
 RETRY_TIME = 30
@@ -69,9 +67,25 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+LOG_ERRORS_STATE = {
+    'TOKENS_ERR': None,
+    # 'TELEGRAM_ERR': None,
+    'ENDPOINT_ERR': None,
+    'ENDPOINT_API_ERR': None,
+    'INCORRECT_API_RESPONSE_ERR': None,
+    'UNEXPECT_STATUS': None,
+}
 
-def send_message(bot, message):
-    # TODO >>> STOP HERE <<<
+
+def send_message(bot, message) -> None:
+    """Отправка сообщения в чат Telegram."""
+    try:
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message
+        )
+    except:
+        pass
 
 
 def get_api_answer(current_timestamp) -> dict:
@@ -105,10 +119,11 @@ def check_response(response) -> list:
         raise exceptions.ApiResponseNotCorrect(
             'В API-ответе по ключу "homeworks" ожидаем список!!'
         )
-    # альтернативный вариант (jsonschema lib):
+    # альтернативный вариант validate() (jsonschema lib):
     # можно проверить всю структуру ответа в соответстии с шаблоном,
     # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
     validate(instance=response, schema=API_RESP_STRUCT)
+
     return response.get('homeworks', [])
 
 
@@ -133,6 +148,7 @@ def main():
     else:
         bot_logger.critical('[!] Tokens not found! Please add your tokens in .env file!')
 
+
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = 1655587998  # int(time.time()) - 2629743
     bot_logger.info(f'Current time: {current_timestamp}')
@@ -143,14 +159,14 @@ def main():
             homeworks = check_response(response)
             for homework in homeworks:
                 message = parse_status(homework)
-                print(message)
-                # send_message()
-
+                print('homework message:', message)
+                send_message(bot, message)
             current_timestamp = response.get('current_date')
-            time.sleep(RETRY_TIME)
         except exceptions.ApiResponseNotCorrect as err:
+            print('EXCEPT:')
+            print(err)
             message = 'Невалидный формат API-ответа.'
-            print(message)
+            # send_message(bot, message)
         except ValidationError as err:
             message = 'Невалидный формат API-ответа.'
             print(message)
@@ -158,10 +174,10 @@ def main():
             message = f'Сбой в работе программы: {error}'
             print()
             # ...
-            time.sleep(RETRY_TIME)
         else:
             pass
-            # ...
+        finally:
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
