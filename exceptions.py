@@ -3,7 +3,9 @@ class ApiResponseNotCorrect(Exception):
 
 
 class PracticumApiErr(Exception):
-    pass
+    def __init__(self, err_key):
+        super().__init__()
+        self.err_key = err_key
 
 
 class TelegramSendErr(Exception):

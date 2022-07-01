@@ -33,7 +33,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')      # bot
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')  # me
 
 RETRY_TIME = 30
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
+ENDPOINT = 'https://practicum.yandex.ru/api/user_api//'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 API_RESP_STRUCT = {
@@ -68,10 +68,12 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-LOG_ERRORS_STATE = {
+ERRORS = {
     'TOKENS_ERR': None,
-    # 'TELEGRAM_ERR': None,
-    'ENDPOINT_ERR': False,
+    'ENDPOINT_ERR': {
+        'state': False,
+        'msg': 'Нет ответа от сервиса Практикум.Домашка! {}'
+    },
     'ENDPOINT_API_ERR': None,
     'INCORRECT_API_RESPONSE_ERR': None,
     'UNEXPECT_STATUS': None,
@@ -81,6 +83,7 @@ LOG_ERRORS_STATE = {
 def send_message(bot, message) -> None:
     """Отправка сообщения в чат Telegram."""
     try:
+        print('\t\tTRY SEND:', message)
         bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,  #'adb',
             text=message
@@ -108,14 +111,14 @@ def get_api_answer(current_timestamp) -> dict:
     params = {'from_date': timestamp}  # 0
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
     if response.status_code != HTTPStatus.OK:
-        err_message = (f'Нет ответа от сервиса Практикум.Домашка! '
-                       f'Ошибка {response.status_code}')
+        err_message = (ERRORS['ENDPOINT_ERR']['msg']
+                       .format(f'Ошибка {response.status_code}!'))
         bot_logger.error(err_message)
-        raise exceptions.PracticumApiErr(err_message)
+        raise exceptions.PracticumApiErr(err_key='ENDPOINT_ERR')
     bot_logger.info('GET data from Practicum API done!')
-    bot_logger.debug(response.json())
-    LOG_ERRORS_STATE['ENDPOINT_ERR'] = False
-    # print('[getapiresp]:', LOG_ERRORS_STATE['ENDPOINT_ERR'])
+    bot_logger.debug('RESPONSE:', response.json())
+    ERRORS['ENDPOINT_ERR']['state'] = False
+    # print('[getapiresp]:', ERRORS['ENDPOINT_ERR'])
     return response.json()
 
 
@@ -128,7 +131,7 @@ def check_response(response) -> list:
             'По Практикум.Домашка API ожидаем словарь или список!'
         )
         # return []
-    if 'current_date' and 'homeworks' not in response.keys():
+    if set(['current_date', 'homeworks']) not in response:
         raise exceptions.ApiResponseNotCorrect(
             'В API-ответе ожидаем ключи "current_date" и "homeworks"!'
         )
@@ -141,7 +144,7 @@ def check_response(response) -> list:
     # можно проверить всю структуру ответа в соответстии с шаблоном,
     # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
     validate(instance=response, schema=API_RESP_STRUCT)
-    homeworks = response.get('homeworks', [])
+    homeworks = response.get('homeworks')
     if not homeworks:
         bot_logger.debug('Нет обновлений.')
     return homeworks
@@ -166,6 +169,15 @@ def check_tokens() -> bool:
     return PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID
 
 
+def errors_sender(bot, err):
+    if not ERRORS[err.err_key]['state']:
+        message = f'{type(err).__name__}: {err}'
+        print(ERRORS[err.err_key]['msg'])
+        print('error_message:', message)
+        send_message(bot, message)
+        ERRORS['ENDPOINT_ERR']['state'] = True
+
+
 def main():
     """Основная логика работы бота."""
 
@@ -175,7 +187,7 @@ def main():
         bot_logger.critical(
             '[!] Tokens not found! Please add your tokens in .env file!'
         )
-        # try to send in TG
+        # exit()
 
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = 0  # 1655587998  # int(time.time()) - 2629743
@@ -191,11 +203,14 @@ def main():
                 send_message(bot, message)
             current_timestamp = response.get('current_date')
         except exceptions.PracticumApiErr as err:
-            print('\t', LOG_ERRORS_STATE.get('ENDPOINT_ERR'))
-            if not LOG_ERRORS_STATE.get('ENDPOINT_ERR'):
-                message = f'{type(err).__name__}: {err}'
-                send_message(bot, message)
-                LOG_ERRORS_STATE['ENDPOINT_ERR'] = True
+            print('########################')
+            print(err.err_key)
+            print('\t', ERRORS['ENDPOINT_ERR']['state'])
+            errors_sender(bot, err)
+            # if not ERRORS.get('ENDPOINT_ERR'):
+            #     message = f'{type(err).__name__}: {err}'
+            #     send_message(bot, message)
+            #     ERRORS['ENDPOINT_ERR'] = True
         except exceptions.ApiResponseNotCorrect as err:
             print('EXCEPT:')
             print(err)
