@@ -3,6 +3,7 @@ import sys
 import time
 import requests
 from pprint import pprint
+from http import HTTPStatus
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
@@ -70,7 +71,7 @@ HOMEWORK_STATUSES = {
 LOG_ERRORS_STATE = {
     'TOKENS_ERR': None,
     # 'TELEGRAM_ERR': None,
-    'ENDPOINT_ERR': None,
+    'ENDPOINT_ERR': False,
     'ENDPOINT_API_ERR': None,
     'INCORRECT_API_RESPONSE_ERR': None,
     'UNEXPECT_STATUS': None,
@@ -81,11 +82,21 @@ def send_message(bot, message) -> None:
     """Отправка сообщения в чат Telegram."""
     try:
         bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
+            chat_id=TELEGRAM_CHAT_ID,  #'adb',
             text=message
         )
-    except:
-        pass
+    except Exception as err:
+        msg = f'{type(err).__name__}: {err}'
+        bot_logger.error(msg, exc_info=True)
+        raise exceptions.TelegramSendErr(
+            'Ошибка отправки сообщения в чат!'
+        )
+        # send_message(bot, msg)
+        # if telegram_available:
+        #     bot.send_message(
+        #         chat_id=TELEGRAM_CHAT_ID,
+        #         text=msg
+        #     )
 
 
 def get_api_answer(current_timestamp) -> dict:
@@ -96,8 +107,15 @@ def get_api_answer(current_timestamp) -> dict:
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}  # 0
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    if response.status_code != HTTPStatus.OK:
+        err_message = (f'Нет ответа от сервиса Практикум.Домашка! '
+                       f'Ошибка {response.status_code}')
+        bot_logger.error(err_message)
+        raise exceptions.PracticumApiErr(err_message)
     bot_logger.info('GET data from Practicum API done!')
-    pprint(response.json())
+    bot_logger.debug(response.json())
+    LOG_ERRORS_STATE['ENDPOINT_ERR'] = False
+    # print('[getapiresp]:', LOG_ERRORS_STATE['ENDPOINT_ERR'])
     return response.json()
 
 
@@ -109,12 +127,12 @@ def check_response(response) -> list:
         raise exceptions.ApiResponseNotCorrect(
             'По Практикум.Домашка API ожидаем словарь или список!'
         )
-        return []
+        # return []
     if 'current_date' and 'homeworks' not in response.keys():
         raise exceptions.ApiResponseNotCorrect(
             'В API-ответе ожидаем ключи "current_date" и "homeworks"!'
         )
-        return []
+        # return []
     if not isinstance(response.get('homeworks'), list):
         raise exceptions.ApiResponseNotCorrect(
             'В API-ответе по ключу "homeworks" ожидаем список!!'
@@ -123,8 +141,10 @@ def check_response(response) -> list:
     # можно проверить всю структуру ответа в соответстии с шаблоном,
     # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
     validate(instance=response, schema=API_RESP_STRUCT)
-
-    return response.get('homeworks', [])
+    homeworks = response.get('homeworks', [])
+    if not homeworks:
+        bot_logger.debug('Нет обновлений.')
+    return homeworks
 
 
 def parse_status(homework: dict):
@@ -132,6 +152,12 @@ def parse_status(homework: dict):
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
     verdict = HOMEWORK_STATUSES.get(homework_status)
+    if verdict is None:
+        err_message = (
+            f'Незадокументированный статус домашней работы: {homework_status}'
+        )
+        bot_logger.error(err_message)
+        raise exceptions.UndefinedHWStatus(err_message)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -146,12 +172,14 @@ def main():
     if check_tokens():
         bot_logger.info('Tokens found!')
     else:
-        bot_logger.critical('[!] Tokens not found! Please add your tokens in .env file!')
-
+        bot_logger.critical(
+            '[!] Tokens not found! Please add your tokens in .env file!'
+        )
+        # try to send in TG
 
     bot = Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = 1655587998  # int(time.time()) - 2629743
-    bot_logger.info(f'Current time: {current_timestamp}')
+    current_timestamp = 0  # 1655587998  # int(time.time()) - 2629743
+    bot_logger.info(f'Start time: {current_timestamp}')
 
     while True:
         try:
@@ -162,6 +190,12 @@ def main():
                 print('homework message:', message)
                 send_message(bot, message)
             current_timestamp = response.get('current_date')
+        except exceptions.PracticumApiErr as err:
+            print('\t', LOG_ERRORS_STATE.get('ENDPOINT_ERR'))
+            if not LOG_ERRORS_STATE.get('ENDPOINT_ERR'):
+                message = f'{type(err).__name__}: {err}'
+                send_message(bot, message)
+                LOG_ERRORS_STATE['ENDPOINT_ERR'] = True
         except exceptions.ApiResponseNotCorrect as err:
             print('EXCEPT:')
             print(err)
@@ -177,7 +211,7 @@ def main():
         else:
             pass
         finally:
-            time.sleep(RETRY_TIME)
+            time.sleep(1)
 
 
 if __name__ == '__main__':
