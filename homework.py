@@ -6,7 +6,7 @@ from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
-from jsonschema import validate
+# from jsonschema import validate  # alternative check json
 from telegram import Bot, TelegramError
 
 from exceptions import (ApiResponseNotCorrect, PracticumApiErr,
@@ -148,7 +148,7 @@ def check_response(response) -> list:
     # альтернативный вариант validate() (jsonschema lib):
     # можно проверить всю структуру ответа в соответстии с шаблоном,
     # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
-    validate(instance=response, schema=API_RESP_STRUCT)
+    # validate(instance=response, schema=API_RESP_STRUCT)
 
     homeworks = response.get('homeworks')
     if not homeworks:
