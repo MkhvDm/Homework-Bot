@@ -92,8 +92,8 @@ def send_message(bot, message) -> None:
 
 def get_api_answer(current_timestamp) -> dict:
     """
-    Запрос данных об изменениях статуса домашней работы с определённого
-    момента времени. Возращает словарь с ключами 'current_date' и 'homeworks'.
+    Запрос данных об изменениях статуса домашней работы.
+    Возращает словарь с ключами 'current_date' и 'homeworks'.
     """
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}  # 0
@@ -232,7 +232,7 @@ def main():
             bot_logger.error(f'Сбой в работе программы: {err}', exc_info=True)
 
         finally:
-            time.sleep(RETRY_TIME)
+            time.sleep(60)
 
 
 if __name__ == '__main__':
