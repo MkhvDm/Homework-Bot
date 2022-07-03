@@ -6,22 +6,16 @@ from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
-# from jsonschema import validate  # alternative check json
+from jsonschema import validate  # alternative check json
 from telegram import Bot, TelegramError
 
+from bot_logger import logger_config
 from exceptions import (ApiResponseNotCorrect, PracticumApiErr,
                         TelegramSendErr, UndefinedHWStatus)
 
 load_dotenv()
 
-# # Prepare your logger...
-FORMATTER = logging.Formatter("%(asctime)s - [%(levelname)s] %(message)s")
 bot_logger = logging.getLogger(__name__)
-bot_logger.setLevel(logging.DEBUG)
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(FORMATTER)
-bot_logger.addHandler(stream_handler)
-bot_logger.debug('Logger enabled...')
 
 # Get tokens from .env
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
@@ -70,6 +64,8 @@ ERRORS = {
     'RESPONSE_NOT_DICT': False,
     'RESPONSE_DONT_CONTAINS_ALL_KEYS': False,
     'HOMEWORKS_NOT_LIST': False,
+    'HOMEWORK_NAME_NOT_FOUND': False,
+    'HOMEWORK_STATUS_NOT_FOUND': False,
     'CURRENT_DATE_NOT_INT': False,
     'UNEXPECT_HOMEWORK_STATUS': False,
 }
@@ -96,14 +92,13 @@ def get_api_answer(current_timestamp) -> dict:
     Возращает словарь с ключами 'current_date' и 'homeworks'.
     """
     timestamp = current_timestamp or int(time.time())
-    params = {'from_date': timestamp}  # 0
+    params = {'from_date': timestamp}
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
     if response.status_code != HTTPStatus.OK:
         err_message = (f'Нет ответа от сервиса Практикум.Домашка. '
                        f'Ошибка {response.status_code}!')
         raise PracticumApiErr(err_message, 'ENDPOINT_ERR')
     bot_logger.info('GET data from Practicum API done!')
-    bot_logger.debug(f'RESPONSE_status: {response}')
     bot_logger.debug(f'RESPONSE JSON: {response.json()}')
     ERRORS['ENDPOINT_ERR'] = False
     return response.json()
@@ -114,41 +109,40 @@ def check_response(response) -> list:
     Проверка ответа API на корректность.
     Возвращает список домашних работ.
     """
-    bot_logger.debug('Start check_response...')
-    if not isinstance(response, (dict, list)):
+    if isinstance(response, list):
+        response = response[0]
+    if not isinstance(response, dict):
         raise ApiResponseNotCorrect(
             'По API Практикум.Домашка ожидаем словарь!',
             'RESPONSE_NOT_DICT'
         )
-    if isinstance(response, list):
-        response = response[0]
+    ERRORS['RESPONSE_NOT_DICT'] = False
+
     if 'current_date' not in response or 'homeworks' not in response:
         raise ApiResponseNotCorrect(
             'В API-ответе ожидаем ключи "current_date" и "homeworks"!',
             'RESPONSE_DONT_CONTAINS_ALL_KEYS'
         )
+    ERRORS['RESPONSE_DONT_CONTAINS_ALL_KEYS'] = False
 
     if not isinstance(response.get('homeworks'), list):
         raise ApiResponseNotCorrect(
             'В API-ответе по ключу "homeworks" ожидаем список!',
             'HOMEWORKS_NOT_LIST'
         )
+    ERRORS['HOMEWORKS_NOT_LIST'] = False
+
     if not isinstance(response.get('current_date'), int):
         raise ApiResponseNotCorrect(
             'В API-ответе по ключу "current_date" ожидаем целое число!',
             'CURRENT_DATE_NOT_INT'
         )
-    # reset errors flag for enable new error notification:
-    for key in ('RESPONSE_NOT_DICT',
-                'RESPONSE_DONT_CONTAINS_ALL_KEYS',
-                'HOMEWORKS_NOT_LIST',
-                'CURRENT_DATE_NOT_INT'):
-        ERRORS[key] = False
+    ERRORS['CURRENT_DATE_NOT_INT'] = False
 
     # альтернативный вариант validate() (jsonschema lib):
     # можно проверить всю структуру ответа в соответстии с шаблоном,
     # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
-    # validate(instance=response, schema=API_RESP_STRUCT)
+    validate(instance=response, schema=API_RESP_STRUCT)
 
     homeworks = response.get('homeworks')
     if not homeworks:
@@ -160,8 +154,22 @@ def parse_status(homework: dict) -> str:
     """Извлечение из объекта домашней работы информации о статусе."""
     bot_logger.debug('Start parse_status...')
     bot_logger.debug(homework)
+    if 'homework_name' not in homework:
+        raise KeyError(
+            'В информации о домашней работе нет названия!',
+            'HOMEWORK_NAME_NOT_FOUND'
+        )
+    ERRORS['HOMEWORK_NAME_NOT_FOUND'] = False
+
+    if 'status' not in homework:
+        raise ApiResponseNotCorrect(
+            'В информации о домашней работе нет статуса работы!',
+            'HOMEWORK_STATUS_NOT_FOUND'
+        )
+    ERRORS['HOMEWORK_STATUS_NOT_FOUND'] = False
+
     homework_name = homework['homework_name']
-    homework_status = homework.get('status')
+    homework_status = homework['status']
     if homework_status not in HOMEWORK_STATUSES.keys():
         raise UndefinedHWStatus(
             f'Незадокументированный статус домашней работы: {homework_status}',
@@ -174,10 +182,10 @@ def parse_status(homework: dict) -> str:
 
 def check_tokens() -> bool:
     """Проверка всех требуемых токенов."""
-    return PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
-def errors_sender(bot, err_msg, err_key):
+def errors_sender(bot, err_msg, err_key) -> None:
     """
     Функция отправки сообщения в Telegram об ошибке уровня ERROR.
     Будет отправлено только одно сообщение, до момента исправления.
@@ -228,12 +236,18 @@ def main():
             bot_logger.error(f'{err_name}: {err_msg}')
             errors_sender(bot, f'{err_name}: {err_msg}', err_key)
 
+        except KeyError as err:
+            err_name, (err_msg, err_key) = type(err).__name__, err.args
+            bot_logger.error(f'{err_name}: {err_msg}')
+            errors_sender(bot, f'{err_name}: {err_msg}', err_key)
+
         except Exception as err:
             bot_logger.error(f'Сбой в работе программы: {err}', exc_info=True)
 
         finally:
-            time.sleep(60)
+            time.sleep(120)
 
 
 if __name__ == '__main__':
+    logger_config(bot_logger)
     main()
