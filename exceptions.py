@@ -1,8 +1,12 @@
-class ApiResponseNotCorrect(Exception):
+class NotifiableError(Exception):
     pass
 
 
-class PracticumApiErr(Exception):
+class ApiResponseNotCorrect(NotifiableError):
+    pass
+
+
+class PracticumApiErr(NotifiableError):
     pass
 
 
@@ -10,5 +14,5 @@ class TelegramSendErr(Exception):
     pass
 
 
-class UndefinedHWStatus(Exception):
+class UndefinedHWStatus(NotifiableError):
     pass

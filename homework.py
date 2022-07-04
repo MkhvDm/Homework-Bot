@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 import time
 from http import HTTPStatus
 
@@ -10,8 +9,8 @@ from jsonschema import validate  # alternative check json
 from telegram import Bot, TelegramError
 
 from bot_logger import logger_config
-from exceptions import (ApiResponseNotCorrect, PracticumApiErr,
-                        TelegramSendErr, UndefinedHWStatus)
+from exceptions import (ApiResponseNotCorrect, NotifiableError,
+                        PracticumApiErr, TelegramSendErr, UndefinedHWStatus)
 
 load_dotenv()
 
@@ -139,9 +138,6 @@ def check_response(response) -> list:
         )
     ERRORS['CURRENT_DATE_NOT_INT'] = False
 
-    # альтернативный вариант validate() (jsonschema lib):
-    # можно проверить всю структуру ответа в соответстии с шаблоном,
-    # недостаток - сложно вывести сообщение, где конкретно проблема в ответе.
     validate(instance=response, schema=API_RESP_STRUCT)
 
     homeworks = response.get('homeworks')
@@ -218,20 +214,10 @@ def main():
                 send_message(bot, message)
             current_timestamp = response.get('current_date')
 
-        except PracticumApiErr as err:
-            err_name, (err_msg, err_key) = type(err).__name__, err.args
-            bot_logger.error(f'{err_name}: {err_msg}')
-            errors_sender(bot, f'{err_name}: {err_msg}', err_key)
-
         except TelegramSendErr as err:
             bot_logger.error(err)  # opt.: exc_info=True
 
-        except ApiResponseNotCorrect as err:
-            err_name, (err_msg, err_key) = type(err).__name__, err.args
-            bot_logger.error(f'{err_name}: {err_msg}')
-            errors_sender(bot, f'{err_name}: {err_msg}', err_key)
-
-        except UndefinedHWStatus as err:
+        except NotifiableError as err:
             err_name, (err_msg, err_key) = type(err).__name__, err.args
             bot_logger.error(f'{err_name}: {err_msg}')
             errors_sender(bot, f'{err_name}: {err_msg}', err_key)
@@ -245,7 +231,7 @@ def main():
             bot_logger.error(f'Сбой в работе программы: {err}', exc_info=True)
 
         finally:
-            time.sleep(120)
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
