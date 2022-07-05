@@ -10,9 +10,9 @@ class PracticumApiErr(NotifiableError):
     pass
 
 
-class TelegramSendErr(Exception):
+class UndefinedHWStatus(NotifiableError):
     pass
 
 
-class UndefinedHWStatus(NotifiableError):
+class TelegramSendErr(Exception):
     pass

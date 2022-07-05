@@ -5,7 +5,6 @@ from http import HTTPStatus
 
 import requests
 from dotenv import load_dotenv
-from jsonschema import validate  # alternative check json
 from telegram import Bot, TelegramError
 
 from bot_logger import logger_config
@@ -21,35 +20,9 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')  # me
 
-RETRY_TIME = 600
+RETRY_TIME = 60
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-
-API_RESP_STRUCT = {
-    "description": "Practicum.Domashka API response",
-    "type": "object",
-    "properties": {
-        "current_date": {
-            "description": "UNIX time",
-            "type": "integer",
-            "minimum": 0},
-        "homeworks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "date_updated": {"type": "string"},
-                    "homework_name": {"type": "string"},
-                    "id": {"type": "integer"},
-                    "lesson_name": {"type": "string"},
-                    "reviewer_comment": {"type": "string"},
-                    "status": {"type": "string"},
-                }
-            },
-        },
-    },
-    "required": ["current_date", "homeworks"]
-}
 
 HOMEWORK_STATUSES = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -138,8 +111,6 @@ def check_response(response) -> list:
         )
     ERRORS['CURRENT_DATE_NOT_INT'] = False
 
-    validate(instance=response, schema=API_RESP_STRUCT)
-
     homeworks = response.get('homeworks')
     if not homeworks:
         bot_logger.debug('Нет обновлений.')
@@ -186,7 +157,7 @@ def errors_sender(bot, err_msg, err_key) -> None:
     Функция отправки сообщения в Telegram об ошибке уровня ERROR.
     Будет отправлено только одно сообщение, до момента исправления.
     """
-    if not ERRORS[err_key]:
+    if not ERRORS.get(err_key):
         send_message(bot, err_msg)
         ERRORS[err_key] = True
 
